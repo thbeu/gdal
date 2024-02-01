@@ -13,7 +13,7 @@
  *
  */
 
-#include "shapefil.h"
+#include "shapefil_private.h"
 
 #include <math.h>
 #include <assert.h>
@@ -31,19 +31,6 @@
 #define FALSE 0
 #endif
 
-#ifndef bBigEndian
-#if defined(CPL_LSB)
-#define bBigEndian false
-#elif defined(CPL_MSB)
-#define bBigEndian true
-#else
-#ifndef static_var_bBigEndian_defined
-#define static_var_bBigEndian_defined
-static bool bBigEndian = false;
-#endif
-#endif
-#endif
-
 /* -------------------------------------------------------------------- */
 /*      If the following is 0.5, nodes will be split in half.  If it    */
 /*      is 0.6 then each subnode will contain 60% of the parent         */
@@ -53,18 +40,6 @@ static bool bBigEndian = false;
 /* -------------------------------------------------------------------- */
 
 #define SHP_SPLIT_RATIO 0.55
-
-#ifdef __cplusplus
-#define STATIC_CAST(type, x) static_cast<type>(x)
-#define REINTERPRET_CAST(type, x) reinterpret_cast<type>(x)
-#define CONST_CAST(type, x) const_cast<type>(x)
-#define SHPLIB_NULLPTR nullptr
-#else
-#define STATIC_CAST(type, x) ((type)(x))
-#define REINTERPRET_CAST(type, x) ((type)(x))
-#define CONST_CAST(type, x) ((type)(x))
-#define SHPLIB_NULLPTR NULL
-#endif
 
 /************************************************************************/
 /*                          SHPTreeNodeInit()                           */
@@ -690,22 +665,24 @@ void SHPAPI_CALL SHPTreeTrimExtraNodes(SHPTree *hTree)
 /************************************************************************/
 /*                              SwapWord()                              */
 /*                                                                      */
-/*      Swap a 2, 4 or 8 byte word.                                     */
+/*      Swap a 4 or 8 byte word.                                        */
 /************************************************************************/
 
 #ifndef SwapWord_defined
 #define SwapWord_defined
 static void SwapWord(int length, void *wordP)
-
 {
-    int i;
-
-    for (i = 0; i < length / 2; i++)
+    if (4 == length)
     {
-        unsigned char temp = STATIC_CAST(unsigned char *, wordP)[i];
-        STATIC_CAST(unsigned char *, wordP)
-        [i] = STATIC_CAST(unsigned char *, wordP)[length - i - 1];
-        STATIC_CAST(unsigned char *, wordP)[length - i - 1] = temp;
+        SHP_SWAP32(STATIC_CAST(uint32_t *, wordP));
+    }
+    else if (8 == length)
+    {
+        SHP_SWAP64(STATIC_CAST(uint64_t *, wordP));
+    }
+    else
+    {
+        assert(4 == length || 8 == length);
     }
 }
 #endif
@@ -965,19 +942,6 @@ int *SHPSearchDiskTreeEx(SHPTreeDiskHandle hDiskTree, double *padfBoundsMin,
     *pnShapeCount = 0;
 
     /* -------------------------------------------------------------------- */
-    /*	Establish the byte order on this machine.	  	        */
-    /* -------------------------------------------------------------------- */
-#if !defined(bBigEndian)
-    {
-        int i = 1;
-        if (*REINTERPRET_CAST(unsigned char *, &i) == 1)
-            bBigEndian = false;
-        else
-            bBigEndian = true;
-    }
-#endif
-
-    /* -------------------------------------------------------------------- */
     /*      Read the header.                                                */
     /* -------------------------------------------------------------------- */
     hDiskTree->sHooks.FSeek(hDiskTree->fpQIX, 0, SEEK_SET);
@@ -986,11 +950,11 @@ int *SHPSearchDiskTreeEx(SHPTreeDiskHandle hDiskTree, double *padfBoundsMin,
     if (memcmp(abyBuf, "SQT", 3) != 0)
         return SHPLIB_NULLPTR;
 
-    bool bNeedSwap;
-    if ((abyBuf[3] == 2 && bBigEndian) || (abyBuf[3] == 1 && !bBigEndian))
-        bNeedSwap = false;
-    else
-        bNeedSwap = true;
+#if defined(SHP_BIG_ENDIAN)
+    bool bNeedSwap = abyBuf[3] != 2;
+#else
+    bool bNeedSwap = abyBuf[3] != 1;
+#endif
 
     /* -------------------------------------------------------------------- */
     /*      Search through root node and its descendants.                   */
@@ -1133,27 +1097,15 @@ int SHPWriteTreeLL(SHPTree *tree, const char *filename, const SAHooks *psHooks)
     }
 
     /* -------------------------------------------------------------------- */
-    /*	Establish the byte order on this machine.	  	        */
-    /* -------------------------------------------------------------------- */
-#if !defined(bBigEndian)
-    {
-        int i = 1;
-        if (*REINTERPRET_CAST(unsigned char *, &i) == 1)
-            bBigEndian = false;
-        else
-            bBigEndian = true;
-    }
-#endif
-
-    /* -------------------------------------------------------------------- */
     /*      Write the header.                                               */
     /* -------------------------------------------------------------------- */
     memcpy(abyBuf + 0, signature, 3);
 
-    if (bBigEndian)
-        abyBuf[3] = 2; /* New MSB */
-    else
-        abyBuf[3] = 1; /* New LSB */
+#if defined(SHP_BIG_ENDIAN)
+    abyBuf[3] = 2; /* New MSB */
+#else
+    abyBuf[3] = 1; /* New LSB */
+#endif
 
     abyBuf[4] = 1; /* version */
     abyBuf[5] = 0; /* next 3 reserved */

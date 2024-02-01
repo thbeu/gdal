@@ -62,7 +62,9 @@
 
 #endif
 
-#define SHP_SWAP32(p) *STATIC_CAST(uint32_t *, p) = _SHP_SWAP32(*(p))
-#define SHP_SWAP64(p) *STATIC_CAST(uint64_t *, p) = _SHP_SWAP64(*(p))
+#define SHP_SWAP32(p)                                                          \
+    *STATIC_CAST(uint32_t *, p) = _SHP_SWAP32(*STATIC_CAST(uint32_t *, p))
+#define SHP_SWAP64(p)                                                          \
+    *STATIC_CAST(uint64_t *, p) = _SHP_SWAP64(*STATIC_CAST(uint64_t *, p))
 
 #endif /* ndef SHAPEFILE_PRIVATE_H_INCLUDED */
